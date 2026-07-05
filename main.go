@@ -2,6 +2,8 @@ package main
 
 import (
 	"fmt"
+	"maps"
+	"slices"
 	"sync"
 )
 
@@ -14,13 +16,13 @@ type Graph struct {
 	mu sync.Mutex
 
 	users       map[int]*User
-	connections map[int][]int
+	connections map[int]map[int]struct{}
 }
 
 func NewGraph() *Graph {
 	return &Graph{
 		users:       make(map[int]*User),
-		connections: make(map[int][]int),
+		connections: make(map[int]map[int]struct{}),
 	}
 }
 
@@ -52,8 +54,11 @@ func (g *Graph) AddConnection(fromID, toID int) bool {
 		return false
 	}
 
-	g.connections[fromID] = append(g.connections[fromID], toID)
-	g.connections[toID] = append(g.connections[toID], fromID)
+	if _, ok := g.connections[fromID]; !ok {
+		g.connections[fromID] = make(map[int]struct{})
+	}
+
+	g.connections[fromID][toID] = struct{}{}
 
 	return true
 }
@@ -67,8 +72,9 @@ func (g *Graph) GetConnections(userID int) []*User {
 	}
 
 	cUsers := make([]*User, 0, len(g.connections[userID]))
+	ids := slices.Collect(maps.Keys(g.connections[userID]))
 
-	for _, id := range g.connections[userID] {
+	for _, id := range ids {
 		cUsers = append(cUsers, g.users[id])
 	}
 
@@ -79,26 +85,67 @@ func (g *Graph) HasConnection(fromID, toID int) bool {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 
+	if len(g.connections[fromID]) == 0 || fromID == toID {
+		return false
+	}
+
+	_, ok := g.connections[fromID][toID]
+
+	return ok
+}
+
+func (g *Graph) IsMutual(fromID, toID int) bool {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
 	if len(g.connections[fromID]) == 0 || len(g.connections[toID]) == 0 || fromID == toID {
 		return false
 	}
 
-	//микрооптимизация - ищем по меньшему массиву
-	if len(g.connections[fromID]) > len(g.connections[toID]) {
-		fromID, toID = toID, fromID
-	}
+	_, fromOk := g.connections[fromID][toID]
+	_, toOk := g.connections[toID][fromID]
 
-	for _, id := range g.connections[fromID] {
-		if id == toID {
-			return true
-		}
+	return fromOk && toOk
+}
+
+func (g *Graph) UserCount() int {
+	return len(g.users)
+}
+
+func (g *Graph) RemoveConnection(fromID, toID int) bool {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
+	if _, ok := g.connections[fromID][toID]; ok {
+		delete(g.connections[fromID], toID)
+		return true
 	}
 
 	return false
 }
 
-func (g *Graph) UserCount() int {
-	return len(g.users)
+func (g *Graph) RemoveUser(id int) bool {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
+	if _, ok := g.users[id]; !ok {
+		return false
+	}
+
+	delete(g.users, id)
+	delete(g.connections, id)
+
+	for fromID := range g.connections[id] {
+		delete(g.connections[fromID], id)
+	}
+
+	return false
+}
+
+func (g *Graph) ConnectionCount(userID int) int {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return len(g.connections[userID])
 }
 
 func main() {
