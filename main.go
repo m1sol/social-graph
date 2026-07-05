@@ -145,7 +145,65 @@ func (g *Graph) RemoveUser(id int) bool {
 func (g *Graph) ConnectionCount(userID int) int {
 	g.mu.Lock()
 	defer g.mu.Unlock()
+
 	return len(g.connections[userID])
+}
+
+func (g *Graph) CommonConnections(id1, id2 int) []*User {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
+	var common []*User
+
+	if len(g.connections[id1]) == 0 || len(g.connections[id2]) == 0 {
+		return nil
+	}
+
+	if len(g.connections[id1]) > len(g.connections[id2]) {
+		id1, id2 = id2, id1
+	}
+
+	for id := range g.connections[id1] {
+		if _, ok := g.connections[id2][id]; !ok {
+			common = append(common, g.users[id])
+		}
+	}
+
+	return common
+}
+
+func (g *Graph) SuggestConnections(userID int) []*User {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
+	var suggest []*User
+	seen := make(map[int]struct{})
+
+	for user, _ := range g.connections[userID] {
+		for id, _ := range g.connections[user] {
+			if _, ok := g.connections[userID][id]; !ok && id != userID {
+				if _, exists := seen[id]; !exists {
+					suggest = append(suggest, g.users[id])
+					seen[id] = struct{}{}
+				}
+			}
+		}
+	}
+
+	return suggest
+}
+
+func (g *Graph) GetAllUsers() []*User {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
+	users := make([]*User, 0, len(g.users))
+
+	for _, user := range g.users {
+		users = append(users, user)
+	}
+
+	return users
 }
 
 func main() {
@@ -156,7 +214,7 @@ func main() {
 	graph.AddUser(3, "Charlie")
 
 	graph.AddConnection(1, 2) // Alice -> Bob
-	graph.AddConnection(1, 3) // Alice -> Charlie
+	//graph.AddConnection(1, 3) // Alice -> Charlie
 	graph.AddConnection(2, 3) // Bob -> Charlie
 
 	if user, ok := graph.GetUser(1); ok {
@@ -170,4 +228,9 @@ func main() {
 
 	fmt.Printf("Alice and Bob connected: %v\n",
 		graph.HasConnection(1, 2))
+
+	suggest := graph.SuggestConnections(1)
+	for _, user := range suggest {
+		fmt.Printf("user: %s\n", user.Name)
+	}
 }
