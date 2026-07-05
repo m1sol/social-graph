@@ -7,6 +7,47 @@ import (
 	"sync"
 )
 
+type Connection interface {
+	Type() string
+	Weight() int
+}
+
+type Friend struct {
+	Since string // Дата начала дружбы
+}
+
+func (f Friend) Type() string {
+	return "friend"
+}
+
+func (f Friend) Weight() int {
+	return 10
+}
+
+type Follower struct {
+	Notifications bool
+}
+
+func (f Follower) Type() string {
+	return "follower"
+}
+
+func (f Follower) Weight() int {
+	return 5
+}
+
+type Blocked struct {
+	Reason string
+}
+
+func (b Blocked) Type() string {
+	return "blocked"
+}
+
+func (b Blocked) Weight() int {
+	return -1
+}
+
 type User struct {
 	ID   int
 	Name string
@@ -16,13 +57,13 @@ type Graph struct {
 	mu sync.Mutex
 
 	users       map[int]*User
-	connections map[int]map[int]struct{}
+	connections map[int]map[int]Connection
 }
 
 func NewGraph() *Graph {
 	return &Graph{
 		users:       make(map[int]*User),
-		connections: make(map[int]map[int]struct{}),
+		connections: make(map[int]map[int]Connection),
 	}
 }
 
@@ -55,10 +96,10 @@ func (g *Graph) AddConnection(fromID, toID int) bool {
 	}
 
 	if _, ok := g.connections[fromID]; !ok {
-		g.connections[fromID] = make(map[int]struct{})
+		g.connections[fromID] = make(map[int]Connection)
 	}
 
-	g.connections[fromID][toID] = struct{}{}
+	g.connections[fromID][toID] = Follower{}
 
 	return true
 }
@@ -206,6 +247,52 @@ func (g *Graph) GetAllUsers() []*User {
 	return users
 }
 
+func (g *Graph) AddTypedConnection(fromID, toID int, conn Connection) bool {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
+	_, fromOk := g.users[fromID]
+	_, toOk := g.users[toID]
+	if !fromOk || !toOk || fromID == toID {
+		return false
+	}
+
+	if _, ok := g.connections[fromID]; !ok {
+		g.connections[fromID] = make(map[int]Connection)
+	}
+
+	g.connections[fromID][toID] = conn
+
+	return true
+}
+
+func (g *Graph) GetConnectionsByType(userID int, connType string) []*User {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
+	if len(g.connections[userID]) == 0 {
+		return nil
+	}
+
+	cUsers := make([]*User, 0, len(g.connections[userID]))
+
+	for id, connection := range g.connections[userID] {
+		if connection.Type() == connType {
+			cUsers = append(cUsers, g.users[id])
+		}
+	}
+
+	return cUsers
+}
+
+func (g *Graph) GetConnectionInfo(fromID, toID int) (Connection, bool) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
+	conn, ok := g.connections[fromID][toID]
+	return conn, ok
+}
+
 func main() {
 	graph := NewGraph()
 
@@ -233,4 +320,7 @@ func main() {
 	for _, user := range suggest {
 		fmt.Printf("user: %s\n", user.Name)
 	}
+
+	conn, ok := graph.GetConnectionInfo(1, 2)
+	fmt.Printf("OK: %v, CONN: %v\n", ok, conn.Weight())
 }
