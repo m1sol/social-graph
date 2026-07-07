@@ -2,8 +2,6 @@ package main
 
 import (
 	"fmt"
-	"maps"
-	"slices"
 	"sync"
 )
 
@@ -113,9 +111,8 @@ func (g *Graph) GetConnections(userID int) []*User {
 	}
 
 	cUsers := make([]*User, 0, len(g.connections[userID]))
-	ids := slices.Collect(maps.Keys(g.connections[userID]))
 
-	for _, id := range ids {
+	for id, _ := range g.connections[userID] {
 		cUsers = append(cUsers, g.users[id])
 	}
 
@@ -150,6 +147,8 @@ func (g *Graph) IsMutual(fromID, toID int) bool {
 }
 
 func (g *Graph) UserCount() int {
+	g.mu.Lock()
+	defer g.mu.Unlock()
 	return len(g.users)
 }
 
